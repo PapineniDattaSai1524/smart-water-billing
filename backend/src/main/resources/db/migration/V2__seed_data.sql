@@ -1,0 +1,50 @@
+-- ============================================================
+-- V2: Originally hard-coded demo/seed rows for local development.
+--
+-- FIXED (see CHANGELOG): this migration used to INSERT a user with
+-- username 'admin', role ADMIN, and a bcrypt hash for the password
+-- "Password@123". That silently broke the documented Super Admin demo
+-- login (admin / Admin@123):
+--
+--   DemoDataInitializer.ensureUser("admin", ..., "Admin@123", Role.SUPER_ADMIN)
+--   calls userRepository.findByUsername("admin").orElseGet(() -> create...)
+--
+-- Because Flyway migrations run BEFORE CommandLineRunner beans execute,
+-- this row already existed by the time DemoDataInitializer ran, so
+-- ensureUser() always found it and returned it AS-IS -- it never created
+-- the intended SUPER_ADMIN account and never fixed the password. Result:
+--   * admin / Admin@123 -> 401 Unauthorized (real hash was for a
+--     different password)
+--   * admin / Password@123 -> logs in, but with role=ADMIN, not
+--     SUPER_ADMIN, so every Super Admin screen/endpoint was inaccessible
+--   * The apartment "Green Valley Residency" this file created (admin_id
+--     = 1, i.e. this same broken 'admin' user) permanently pre-empted
+--     DemoDataInitializer's own idempotent "find or create apartment
+--     named Green Valley Residency" check, so the 'owner' demo account
+--     was never actually linked to any apartment.
+--
+-- DemoDataInitializer (see config/DemoDataInitializer.java) already
+-- creates all necessary demo accounts (admin/Admin@123 = SUPER_ADMIN,
+-- owner/Owner@123 = ADMIN, resident/Resident@123 = RESIDENT) plus a
+-- fully linked community/apartment/household/meter/tariff/usage/invoice
+-- on every startup, idempotently. It is now the single source of truth
+-- for demo data, so this migration is intentionally a no-op.
+--
+-- NOTE for existing local databases: if you already ran the app before
+-- this fix, your database still has the bad 'admin' / 'ravikumar' rows
+-- from the old version of this migration. Flyway will not re-run an
+-- already-applied migration even after this edit, so either:
+--   (a) drop and recreate your local/dev database, or
+--   (b) manually run:
+--         DELETE FROM resident_assignments WHERE user_id IN
+--           (SELECT id FROM users WHERE username IN ('admin','ravikumar'));
+--         DELETE FROM water_meter_configs WHERE household_id IN
+--           (SELECT id FROM households WHERE unit_number = 'A-101');
+--         DELETE FROM households WHERE unit_number = 'A-101';
+--         DELETE FROM apartments WHERE name = 'Green Valley Residency';
+--         DELETE FROM users WHERE username IN ('admin','ravikumar');
+--       then restart the app so DemoDataInitializer recreates everything
+--       correctly.
+-- ============================================================
+
+-- (intentionally no statements)
